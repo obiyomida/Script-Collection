@@ -5,6 +5,7 @@
 // @description  Boost YouTube volume up to 500% by default, with a toggle button to increase limit to 1000%.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
+// @match        *://www.youtube.com/*
 // @grant        none
 // ==/UserScript==
 
