@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Facebook Ad & Sidebar Blocker (v1.3)
+// @name         Facebook Ad & PYMK Ultimate Blocker (v1.5)
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.5
 // @description  Blocks Sponsored Posts, Suggested Posts, PYMK, and Sidebar Ads on Facebook
-// @author       YourName
+// @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
 // @grant        none
@@ -20,17 +20,20 @@
         // Block Suggested posts
         let suggestedPosts = document.querySelectorAll('div:has(span:has-text("Suggested for you"))');
 
-        // Block People You May Know (PYMK)
-        let pymkSections = document.querySelectorAll('div:has(span:has-text("People You May Know"))');
+        // Block "People You May Know" (PYMK) - Feed
+        let pymkFeed = document.querySelectorAll('div:has-text("People You May Know"), div:has(span:has-text("People You May Know"))');
+
+        // Block PYMK in Sidebar & Other Sections
+        let pymkSidebar = document.querySelectorAll('[aria-label="People You May Know"], div:has(a:has-text("Add friend"))');
 
         // Block Ads in the Chat Sidebar (Right Panel)
         let sidebarAds = document.querySelectorAll('div:has-text("Sponsored"):not([role="menu"])');
 
-        // Block Sidebar Ads (More Specific)
+        // Block Sidebar Ad Section more accurately
         let sidebarAdSections = document.querySelectorAll('[aria-label="Sponsored"]');
 
         // Remove all found elements
-        [...sponsoredPosts, ...suggestedPosts, ...pymkSections, ...sidebarAds, ...sidebarAdSections].forEach(el => el.remove());
+        [...sponsoredPosts, ...suggestedPosts, ...pymkFeed, ...pymkSidebar, ...sidebarAds, ...sidebarAdSections].forEach(el => el.remove());
     }
 
     // Run initially
