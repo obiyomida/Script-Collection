@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         YouTube Volume Booster
+// @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.1
-// @description  Boost YouTube volume up to 500% by default, with a toggle button to increase limit to 1000%.
+// @version      0.2
+// @description  Boost YouTube volume up to 500% with a toggle for 1000%. Also adds an "Audio Only" mode that hides video and shows only the thumbnail.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
-// @match        *://www.youtube.com/*
 // @grant        none
 // ==/UserScript==
 
@@ -14,15 +13,14 @@
 
     let lastUrl = location.href;
     let maxBoost = 5;
+    let audioOnly = false;
 
-    function createVolumeControls() {
+    function createControls() {
         let video = document.querySelector("video");
         let controls = document.querySelector(".ytp-left-controls");
+        let thumbnail = document.querySelector("meta[property='og:image']")?.content;
 
-        if (!video || !controls) return;
-
-        document.querySelector("#volume-booster-container")?.remove();
-        document.querySelector("#toggle-boost-button")?.remove();
+        if (!video || !controls || document.querySelector("#volume-booster-container")) return;
 
         localStorage.setItem("ytVolumeBoost", "1");
 
@@ -43,7 +41,7 @@
         slider.step = "0.1";
         slider.value = "1";
         slider.style.cssText = `
-            width: 300px;
+            width: 150px;
             height: 8px;
             cursor: pointer;
             background: white;
@@ -87,6 +85,51 @@
             toggleButton.innerText = `🔄 Max: ${maxBoost * 100}%`;
         });
 
+        let audioOnlyButton = document.createElement("button");
+        audioOnlyButton.id = "audio-only-button";
+        audioOnlyButton.innerText = "🎵 Audio Only";
+        audioOnlyButton.style.cssText = `
+            padding: 5px 10px;
+            font-size: 12px;
+            color: white;
+            background: transparent;
+            border: 1px solid white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        `;
+
+        audioOnlyButton.addEventListener("mouseenter", () => {
+            audioOnlyButton.style.background = "rgba(255, 255, 255, 0.2)";
+        });
+
+        audioOnlyButton.addEventListener("mouseleave", () => {
+            audioOnlyButton.style.background = "transparent";
+        });
+
+        audioOnlyButton.addEventListener("click", function() {
+            audioOnly = !audioOnly;
+            if (audioOnly) {
+                video.style.display = "none";
+                let thumb = document.createElement("img");
+                thumb.id = "video-thumbnail";
+                thumb.src = thumbnail;
+                thumb.style.cssText = `
+                    width: 100%;
+                    max-width: 640px;
+                    display: block;
+                    margin: auto;
+                `;
+                video.parentNode.insertBefore(thumb, video.nextSibling);
+                audioOnlyButton.innerText = "🎥 Show Video";
+            } else {
+                video.style.display = "block";
+                document.querySelector("#video-thumbnail")?.remove();
+                audioOnlyButton.innerText = "🎵 Audio Only";
+            }
+        });
+
         if (!video.audioCtx) {
             let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             let source = audioCtx.createMediaElementSource(video);
@@ -113,12 +156,13 @@
         container.appendChild(sliderLabel);
         controls.appendChild(container);
         controls.appendChild(toggleButton);
+        controls.appendChild(audioOnlyButton);
     }
 
     function checkForVideo() {
         let video = document.querySelector("video");
         if (video) {
-            createVolumeControls();
+            createControls();
         }
     }
 
