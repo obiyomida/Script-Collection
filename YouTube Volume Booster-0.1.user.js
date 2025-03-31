@@ -122,7 +122,7 @@
                     margin: auto;
                 `;
                 video.parentNode.insertBefore(thumb, video.nextSibling);
-                audioOnlyButton.innerText = "🎥 Show Video";
+                audioOnlyButton.innerText = "🎥";
             } else {
                 video.style.display = "block";
                 document.querySelector("#video-thumbnail")?.remove();
