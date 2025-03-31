@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.2
-// @description  Boost YouTube volume up to 500% with a toggle for 1000%. Also adds an "Audio Only" mode that hides video and shows only the thumbnail.
+// @version      0.4
+// @description  Boost YouTube volume up to 500% with a toggle for 1000%. Adds "Audio Only" mode that hides video and shows only the thumbnail, with controls placed above the title.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
 // @grant        none
@@ -17,20 +17,24 @@
 
     function createControls() {
         let video = document.querySelector("video");
-        let controls = document.querySelector(".ytp-left-controls");
+        let titleContainer = document.querySelector("#title.ytd-watch-metadata");
         let thumbnail = document.querySelector("meta[property='og:image']")?.content;
 
-        if (!video || !controls || document.querySelector("#volume-booster-container")) return;
+        if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
 
         localStorage.setItem("ytVolumeBoost", "1");
 
         let container = document.createElement("div");
-        container.id = "volume-booster-container";
+        container.id = "custom-controls-container";
         container.style.cssText = `
             display: flex;
             align-items: center;
-            margin-left: 20px;
-            gap: 10px;
+            justify-content: center;
+            gap: 15px;
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 10px;
         `;
 
         let slider = document.createElement("input");
@@ -52,62 +56,45 @@
         sliderLabel.innerText = "🔊 100%";
         sliderLabel.style.cssText = `
             font-size: 14px;
-            color: white;
             font-weight: bold;
+            color: white;
         `;
 
-        let toggleButton = document.createElement("button");
-        toggleButton.id = "toggle-boost-button";
-        toggleButton.innerText = "🔄500%";
-        toggleButton.style.cssText = `
-            padding: 5px 10px;
-            font-size: 12px;
-            color: white;
-            background: transparent;
-            border: 1px solid white;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.2s;
-        `;
+        function createButton(id, text) {
+            let button = document.createElement("button");
+            button.id = id;
+            button.innerText = text;
+            button.style.cssText = `
+                padding: 5px 10px;
+                font-size: 12px;
+                background: transparent;
+                color: white;
+                border: 1px solid white;
+                border-radius: 5px;
+                cursor: pointer;
+                font-weight: bold;
+                transition: background 0.2s;
+            `;
 
-        toggleButton.addEventListener("mouseenter", () => {
-            toggleButton.style.background = "rgba(255, 255, 255, 0.2)";
-        });
+            button.addEventListener("mouseenter", () => {
+                button.style.background = "rgba(255, 255, 255, 0.2)";
+            });
 
-        toggleButton.addEventListener("mouseleave", () => {
-            toggleButton.style.background = "transparent";
-        });
+            button.addEventListener("mouseleave", () => {
+                button.style.background = "transparent";
+            });
 
+            return button;
+        }
+
+        let toggleButton = createButton("toggle-boost-button", "🔄 Max: 500%");
         toggleButton.addEventListener("click", function() {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
-            toggleButton.innerText = `🔄: ${maxBoost * 100}%`;
+            toggleButton.innerText = `🔄 Max: ${maxBoost * 100}%`;
         });
 
-        let audioOnlyButton = document.createElement("button");
-        audioOnlyButton.id = "audio-only-button";
-        audioOnlyButton.innerText = "🎵";
-        audioOnlyButton.style.cssText = `
-            padding: 5px 10px;
-            font-size: 12px;
-            color: white;
-            background: transparent;
-            border: 1px solid white;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            transition: background 0.2s;
-        `;
-
-        audioOnlyButton.addEventListener("mouseenter", () => {
-            audioOnlyButton.style.background = "rgba(255, 255, 255, 0.2)";
-        });
-
-        audioOnlyButton.addEventListener("mouseleave", () => {
-            audioOnlyButton.style.background = "transparent";
-        });
-
+        let audioOnlyButton = createButton("audio-only-button", "🎵 Audio Only");
         audioOnlyButton.addEventListener("click", function() {
             audioOnly = !audioOnly;
             if (audioOnly) {
@@ -122,11 +109,11 @@
                     margin: auto;
                 `;
                 video.parentNode.insertBefore(thumb, video.nextSibling);
-                audioOnlyButton.innerText = "🎥";
+                audioOnlyButton.innerText = "🎥 Show Video";
             } else {
                 video.style.display = "block";
                 document.querySelector("#video-thumbnail")?.remove();
-                audioOnlyButton.innerText = "🎵";
+                audioOnlyButton.innerText = "🎵 Audio Only";
             }
         });
 
@@ -154,9 +141,9 @@
 
         container.appendChild(slider);
         container.appendChild(sliderLabel);
-        controls.appendChild(container);
-        controls.appendChild(toggleButton);
-        controls.appendChild(audioOnlyButton);
+        container.appendChild(toggleButton);
+        container.appendChild(audioOnlyButton);
+        titleContainer.parentNode.insertBefore(container, titleContainer);
     }
 
     function checkForVideo() {
