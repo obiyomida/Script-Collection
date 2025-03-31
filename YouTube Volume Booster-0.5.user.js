@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      0.7
 // @description  Boost YouTube volume up to 500% with a toggle for 1000%. Adds "Audio Only" mode that hides video and shows only the thumbnail, with controls placed above the title.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
 // @grant        none
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     let lastUrl = location.href;
@@ -16,7 +16,18 @@
     let audioOnly = false;
 
     function getThumbnail() {
-        return document.querySelector("meta[property='og:image']")?.content || "";
+        const videoId = new URL(location.href).searchParams.get("v");
+        return videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : "";
+    }
+
+    function updateThumbnail() {
+        let thumbnailImg = document.querySelector("#video-thumbnail");
+        if (audioOnly && thumbnailImg) {
+            let newThumb = getThumbnail();
+            if (thumbnailImg.src !== newThumb) {
+                thumbnailImg.src = newThumb;
+            }
+        }
     }
 
     function createControls() {
@@ -91,27 +102,30 @@
         }
 
         let toggleButton = createButton("toggle-boost-button", "🔄 Max: 500%");
-        toggleButton.addEventListener("click", function() {
+        toggleButton.addEventListener("click", function () {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
             toggleButton.innerText = `🔄 Max: ${maxBoost * 100}%`;
         });
 
         let audioOnlyButton = createButton("audio-only-button", "🎵 Audio Only");
-        audioOnlyButton.addEventListener("click", function() {
+        audioOnlyButton.addEventListener("click", function () {
             audioOnly = !audioOnly;
+            let thumb = document.querySelector("#video-thumbnail");
             if (audioOnly) {
                 video.style.display = "none";
-                let thumb = document.createElement("img");
-                thumb.id = "video-thumbnail";
-                thumb.src = getThumbnail();
-                thumb.style.cssText = `
-                    width: 100%;
-                    max-width: 640px;
-                    display: block;
-                    margin: auto;
-                `;
-                video.parentNode.insertBefore(thumb, video.nextSibling);
+                if (!thumb) {
+                    thumb = document.createElement("img");
+                    thumb.id = "video-thumbnail";
+                    thumb.src = getThumbnail();
+                    thumb.style.cssText = `
+                        width: 100%;
+                        max-width: 640px;
+                        display: block;
+                        margin: auto;
+                    `;
+                    video.parentNode.insertBefore(thumb, video.nextSibling);
+                }
                 audioOnlyButton.innerText = "🎥 Show Video";
             } else {
                 video.style.display = "block";
@@ -135,7 +149,7 @@
         slider.value = "1";
         sliderLabel.innerText = "🔊 100%";
 
-        slider.addEventListener("input", function() {
+        slider.addEventListener("input", function () {
             let boostFactor = parseFloat(this.value);
             video.gainNode.gain.value = boostFactor;
             sliderLabel.innerText = `🔊 ${Math.round(boostFactor * 100)}%`;
@@ -163,6 +177,15 @@
             setTimeout(checkForVideo, 1000);
         }
     }).observe(document.body, { childList: true, subtree: true });
+
+    // **Check every second to update the thumbnail based on the URL**
+    setInterval(() => {
+        if (location.href !== lastUrl) {
+            lastUrl = location.href;
+            document.querySelector("#video-thumbnail")?.remove();
+            updateThumbnail();
+        }
+    }, 1000);
 
     checkForVideo();
 })();
