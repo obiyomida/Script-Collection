@@ -58,7 +58,7 @@
 
         let toggleButton = document.createElement("button");
         toggleButton.id = "toggle-boost-button";
-        toggleButton.innerText = "🔄 Max: 500%";
+        toggleButton.innerText = "🔄500%";
         toggleButton.style.cssText = `
             padding: 5px 10px;
             font-size: 12px;
@@ -82,12 +82,12 @@
         toggleButton.addEventListener("click", function() {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
-            toggleButton.innerText = `🔄 Max: ${maxBoost * 100}%`;
+            toggleButton.innerText = `🔄: ${maxBoost * 100}%`;
         });
 
         let audioOnlyButton = document.createElement("button");
         audioOnlyButton.id = "audio-only-button";
-        audioOnlyButton.innerText = "🎵 Audio Only";
+        audioOnlyButton.innerText = "🎵";
         audioOnlyButton.style.cssText = `
             padding: 5px 10px;
             font-size: 12px;
@@ -126,7 +126,7 @@
             } else {
                 video.style.display = "block";
                 document.querySelector("#video-thumbnail")?.remove();
-                audioOnlyButton.innerText = "🎵 Audio Only";
+                audioOnlyButton.innerText = "🎵";
             }
         });
 
