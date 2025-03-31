@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.5
 // @description  Boost YouTube volume up to 500% with a toggle for 1000%. Adds "Audio Only" mode that hides video and shows only the thumbnail, with controls placed above the title.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
@@ -15,10 +15,13 @@
     let maxBoost = 5;
     let audioOnly = false;
 
+    function getThumbnail() {
+        return document.querySelector("meta[property='og:image']")?.content || "";
+    }
+
     function createControls() {
         let video = document.querySelector("video");
         let titleContainer = document.querySelector("#title.ytd-watch-metadata");
-        let thumbnail = document.querySelector("meta[property='og:image']")?.content;
 
         if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
 
@@ -101,7 +104,7 @@
                 video.style.display = "none";
                 let thumb = document.createElement("img");
                 thumb.id = "video-thumbnail";
-                thumb.src = thumbnail;
+                thumb.src = getThumbnail();
                 thumb.style.cssText = `
                     width: 100%;
                     max-width: 640px;
@@ -156,6 +159,7 @@
     new MutationObserver(() => {
         if (location.href !== lastUrl) {
             lastUrl = location.href;
+            document.querySelector("#video-thumbnail")?.remove();
             setTimeout(checkForVideo, 1000);
         }
     }).observe(document.body, { childList: true, subtree: true });
