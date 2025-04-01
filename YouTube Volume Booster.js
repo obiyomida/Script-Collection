@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      0.7
-// @description  Boost YouTube volume up to 500% with a toggle for 1000%. Adds "Audio Only" mode that hides video and shows only the thumbnail, with controls placed above the title.
+// @version      1.0
+// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Adds "Audio Only" mode that hides video and shows only the thumbnail. Controls are placed between video and title.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
 // @grant        none
@@ -32,11 +32,9 @@
 
     function createControls() {
         let video = document.querySelector("video");
-        let titleContainer = document.querySelector("#title.ytd-watch-metadata");
+        let titleContainer = document.querySelector("#above-the-fold, #title.ytd-watch-metadata");
 
         if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
-
-        localStorage.setItem("ytVolumeBoost", "1");
 
         let container = document.createElement("div");
         container.id = "custom-controls-container";
@@ -57,7 +55,7 @@
         slider.min = "1";
         slider.max = maxBoost.toString();
         slider.step = "0.1";
-        slider.value = "1";
+        slider.value = "1"; // Default to 100%
         slider.style.cssText = `
             width: 150px;
             height: 8px;
@@ -138,14 +136,14 @@
             let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             let source = audioCtx.createMediaElementSource(video);
             let gainNode = audioCtx.createGain();
-            gainNode.gain.value = parseFloat(localStorage.getItem("ytVolumeBoost")) || 1;
+            gainNode.gain.value = 1; // Default to 100%
             source.connect(gainNode);
             gainNode.connect(audioCtx.destination);
             video.audioCtx = audioCtx;
             video.gainNode = gainNode;
         }
 
-        video.gainNode.gain.value = 1;
+        video.gainNode.gain.value = 1; // Reset to 100% for every new video
         slider.value = "1";
         sliderLabel.innerText = "🔊 100%";
 
@@ -153,7 +151,6 @@
             let boostFactor = parseFloat(this.value);
             video.gainNode.gain.value = boostFactor;
             sliderLabel.innerText = `🔊 ${Math.round(boostFactor * 100)}%`;
-            localStorage.setItem("ytVolumeBoost", boostFactor.toString());
         });
 
         container.appendChild(slider);
@@ -170,22 +167,33 @@
         }
     }
 
+    function retryUntilLoaded() {
+        if (document.readyState === "complete") {
+            checkForVideo();
+        } else {
+            setTimeout(retryUntilLoaded, 500);
+        }
+    }
+
+    // Run script as early as possible
+    document.addEventListener("DOMContentLoaded", retryUntilLoaded);
+    window.onload = retryUntilLoaded;
+
     new MutationObserver(() => {
         if (location.href !== lastUrl) {
             lastUrl = location.href;
             document.querySelector("#video-thumbnail")?.remove();
-            setTimeout(checkForVideo, 1000);
+            setTimeout(checkForVideo, 500);
         }
     }).observe(document.body, { childList: true, subtree: true });
 
-    // **Check every second to update the thumbnail based on the URL**
     setInterval(() => {
         if (location.href !== lastUrl) {
             lastUrl = location.href;
             document.querySelector("#video-thumbnail")?.remove();
             updateThumbnail();
         }
-    }, 1000);
+    }, 500);
 
-    checkForVideo();
+    retryUntilLoaded();
 })();
