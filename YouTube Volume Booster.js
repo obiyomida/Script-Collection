@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Adds "Audio Only" mode that hides video and shows only the thumbnail. Controls are placed between video and title.
+// @version      2.0
+// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Adds "Audio Only" mode that hides video.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
 // @grant        none
@@ -15,26 +15,27 @@
     let maxBoost = 5;
     let audioOnly = false;
 
-    function getThumbnail() {
-        const videoId = new URL(location.href).searchParams.get("v");
-        return videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : "";
-    }
+    function waitForElements(selectors, callback, timeout = 10000) {
+        const start = performance.now();
 
-    function updateThumbnail() {
-        let thumbnailImg = document.querySelector("#video-thumbnail");
-        if (audioOnly && thumbnailImg) {
-            let newThumb = getThumbnail();
-            if (thumbnailImg.src !== newThumb) {
-                thumbnailImg.src = newThumb;
+        const interval = setInterval(() => {
+            const elapsed = performance.now() - start;
+            const elements = selectors.map(sel => document.querySelector(sel));
+
+            if (elements.every(el => el)) {
+                clearInterval(interval);
+                callback(...elements);
             }
-        }
+
+            if (elapsed > timeout) {
+                clearInterval(interval);
+                console.warn("YouTube Enhancer: Required elements not found in time.");
+            }
+        }, 300);
     }
 
-    function createControls() {
-        let video = document.querySelector("video");
-        let titleContainer = document.querySelector("#above-the-fold, #title.ytd-watch-metadata");
-
-        if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
+    function createControls(video, titleContainer) {
+        if (document.querySelector("#custom-controls-container")) return;
 
         let container = document.createElement("div");
         container.id = "custom-controls-container";
@@ -55,7 +56,7 @@
         slider.min = "1";
         slider.max = maxBoost.toString();
         slider.step = "0.1";
-        slider.value = "1"; // Default to 100%
+        slider.value = "1"; // Always reset to 100%
         slider.style.cssText = `
             width: 150px;
             height: 8px;
@@ -99,7 +100,7 @@
             return button;
         }
 
-        let toggleButton = createButton("toggle-boost-button", "🔄 Max: 500%");
+        let toggleButton = createButton("toggle-boost-button", `🔄 Max: ${maxBoost * 100}%`);
         toggleButton.addEventListener("click", function () {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
@@ -109,25 +110,12 @@
         let audioOnlyButton = createButton("audio-only-button", "🎵 Audio Only");
         audioOnlyButton.addEventListener("click", function () {
             audioOnly = !audioOnly;
-            let thumb = document.querySelector("#video-thumbnail");
+
             if (audioOnly) {
                 video.style.display = "none";
-                if (!thumb) {
-                    thumb = document.createElement("img");
-                    thumb.id = "video-thumbnail";
-                    thumb.src = getThumbnail();
-                    thumb.style.cssText = `
-                        width: 100%;
-                        max-width: 640px;
-                        display: block;
-                        margin: auto;
-                    `;
-                    video.parentNode.insertBefore(thumb, video.nextSibling);
-                }
                 audioOnlyButton.innerText = "🎥 Show Video";
             } else {
                 video.style.display = "block";
-                document.querySelector("#video-thumbnail")?.remove();
                 audioOnlyButton.innerText = "🎵 Audio Only";
             }
         });
@@ -136,17 +124,14 @@
             let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             let source = audioCtx.createMediaElementSource(video);
             let gainNode = audioCtx.createGain();
-            gainNode.gain.value = 1; // Default to 100%
+            gainNode.gain.value = 1;
             source.connect(gainNode);
             gainNode.connect(audioCtx.destination);
             video.audioCtx = audioCtx;
             video.gainNode = gainNode;
         }
 
-        video.gainNode.gain.value = 1; // Reset to 100% for every new video
-        slider.value = "1";
-        sliderLabel.innerText = "🔊 100%";
-
+        video.gainNode.gain.value = 1;
         slider.addEventListener("input", function () {
             let boostFactor = parseFloat(this.value);
             video.gainNode.gain.value = boostFactor;
@@ -160,40 +145,27 @@
         titleContainer.parentNode.insertBefore(container, titleContainer);
     }
 
-    function checkForVideo() {
-        let video = document.querySelector("video");
-        if (video) {
-            createControls();
-        }
+    function setupEnhancer() {
+        waitForElements(["video", "#above-the-fold, #title.ytd-watch-metadata"], (video, titleContainer) => {
+            createControls(video, titleContainer);
+        });
     }
 
-    function retryUntilLoaded() {
-        if (document.readyState === "complete") {
-            checkForVideo();
-        } else {
-            setTimeout(retryUntilLoaded, 500);
-        }
-    }
-
-    // Run script as early as possible
-    document.addEventListener("DOMContentLoaded", retryUntilLoaded);
-    window.onload = retryUntilLoaded;
-
+    // Detect navigation in YouTube SPA
     new MutationObserver(() => {
         if (location.href !== lastUrl) {
             lastUrl = location.href;
-            document.querySelector("#video-thumbnail")?.remove();
-            setTimeout(checkForVideo, 500);
+            setTimeout(setupEnhancer, 1000);
         }
     }).observe(document.body, { childList: true, subtree: true });
 
-    setInterval(() => {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
-            document.querySelector("#video-thumbnail")?.remove();
-            updateThumbnail();
-        }
-    }, 500);
+    // Also listen to YouTube navigation events
+    window.addEventListener("yt-navigate-finish", () => {
+        setTimeout(setupEnhancer, 1000);
+    });
 
-    retryUntilLoaded();
+    window.addEventListener("load", setupEnhancer);
+    document.addEventListener("DOMContentLoaded", setupEnhancer);
+
+    setupEnhancer();
 })();
