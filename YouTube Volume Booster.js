@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode (Ultra Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      3.0
 // @description  Boost YouTube volume up to 500% (toggleable to 1000%). Audio Only mode. Fully robust against refresh/navigation/lazy loads/reset DOMs on YouTube SPA site changes.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
@@ -16,30 +16,25 @@
     let audioOnly = false;
 
     function waitForElements(selectors, callback, timeout = 15000) {
-        let attempt = 0;
         const start = performance.now();
 
-        const tryFind = () => {
-            const elapsed = performance.now() - start;
+        function check() {
             const elements = selectors.map(sel => document.querySelector(sel));
-
             if (elements.every(el => el)) {
                 callback(...elements);
                 return;
             }
 
-            if (elapsed > timeout) {
-                console.warn("YouTube Enhancer: Timeout reached. Will retry in fallback.");
+            if (performance.now() - start > timeout) {
+                console.warn("YouTube Enhancer: Timeout reached, retrying later...");
                 setTimeout(() => waitForElements(selectors, callback, timeout), 2000); // Fallback retry
                 return;
             }
 
-            attempt++;
-            const delay = Math.min(1000, 200 + attempt * 100); // Exponential backoff
-            setTimeout(tryFind, delay);
-        };
+            requestIdleCallback(check, { timeout: 1000 });
+        }
 
-        tryFind();
+        check();
     }
 
     function createControls(video, titleContainer) {
@@ -114,8 +109,17 @@
             const source = audioCtx.createMediaElementSource(video);
             const gainNode = audioCtx.createGain();
             gainNode.gain.value = 1;
+
             source.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+
+            // Prevent auto-suspend
+            setInterval(() => {
+                if (audioCtx.state === "suspended") {
+                    audioCtx.resume();
+                }
+            }, 5000);
+
             video.audioCtx = audioCtx;
             video.gainNode = gainNode;
         }
@@ -130,6 +134,7 @@
         container.appendChild(label);
         container.appendChild(toggleBtn);
         container.appendChild(audioBtn);
+
         titleContainer.parentNode.insertBefore(container, titleContainer);
     }
 
@@ -137,34 +142,40 @@
         waitForElements(["video", "#above-the-fold, #title.ytd-watch-metadata"], (video, titleContainer) => {
             createControls(video, titleContainer);
 
-            // Watch for video element changes (e.g., YouTube replaces it)
-            new MutationObserver(() => {
+            // Monitor video replacement
+            const videoObserver = new MutationObserver(() => {
                 if (!document.contains(video)) {
                     console.log("YouTube Enhancer: Video replaced, reinitializing...");
+                    videoObserver.disconnect();
                     setupEnhancer();
                 }
-            }).observe(document.body, { childList: true, subtree: true });
+            });
 
-            // Reinsert controls if DOM wipes them
-            new MutationObserver(() => {
+            videoObserver.observe(document.body, { childList: true, subtree: true });
+
+            // Monitor control removal
+            const uiObserver = new MutationObserver(() => {
                 if (!document.querySelector("#custom-controls-container")) {
                     console.log("YouTube Enhancer: Controls removed, reinserting...");
                     createControls(video, titleContainer);
                 }
-            }).observe(titleContainer.parentNode, { childList: true });
+            });
+
+            uiObserver.observe(titleContainer.parentNode, { childList: true });
         });
     }
 
-    // Watch for navigation between videos
-    const observeUrlChange = () => {
-        new MutationObserver(() => {
+    function observeUrlChange() {
+        const observer = new MutationObserver(() => {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
                 setTimeout(setupEnhancer, 1000);
             }
-        }).observe(document.body, { childList: true, subtree: true });
-    };
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
 
+    // YouTube SPA event hooks
     window.addEventListener("yt-navigate-finish", () => setTimeout(setupEnhancer, 1000));
     window.addEventListener("yt-page-data-updated", () => setTimeout(setupEnhancer, 1000));
     window.addEventListener("load", setupEnhancer);
