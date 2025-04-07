@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         YouTube Volume Booster + Audio Only Mode
+// @name         YouTube Volume Booster + Audio Only Mode (Ultra Stable)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Adds "Audio Only" mode that hides video.
+// @version      2.5
+// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Audio Only mode. Fully robust against refresh/navigation/lazy loads/reset DOMs on YouTube SPA site changes.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
 // @grant        none
@@ -15,29 +15,37 @@
     let maxBoost = 5;
     let audioOnly = false;
 
-    function waitForElements(selectors, callback, timeout = 10000) {
+    function waitForElements(selectors, callback, timeout = 15000) {
+        let attempt = 0;
         const start = performance.now();
 
-        const interval = setInterval(() => {
+        const tryFind = () => {
             const elapsed = performance.now() - start;
             const elements = selectors.map(sel => document.querySelector(sel));
 
             if (elements.every(el => el)) {
-                clearInterval(interval);
                 callback(...elements);
+                return;
             }
 
             if (elapsed > timeout) {
-                clearInterval(interval);
-                console.warn("YouTube Enhancer: Required elements not found in time.");
+                console.warn("YouTube Enhancer: Timeout reached. Will retry in fallback.");
+                setTimeout(() => waitForElements(selectors, callback, timeout), 2000); // Fallback retry
+                return;
             }
-        }, 300);
+
+            attempt++;
+            const delay = Math.min(1000, 200 + attempt * 100); // Exponential backoff
+            setTimeout(tryFind, delay);
+        };
+
+        tryFind();
     }
 
     function createControls(video, titleContainer) {
-        if (document.querySelector("#custom-controls-container")) return;
+        if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
 
-        let container = document.createElement("div");
+        const container = document.createElement("div");
         container.id = "custom-controls-container";
         container.style.cssText = `
             display: flex;
@@ -50,13 +58,12 @@
             border-radius: 10px;
         `;
 
-        let slider = document.createElement("input");
+        const slider = document.createElement("input");
         slider.type = "range";
-        slider.id = "volume-booster-slider";
         slider.min = "1";
         slider.max = maxBoost.toString();
         slider.step = "0.1";
-        slider.value = "1"; // Always reset to 100%
+        slider.value = "1";
         slider.style.cssText = `
             width: 150px;
             height: 8px;
@@ -64,20 +71,15 @@
             background: white;
         `;
 
-        let sliderLabel = document.createElement("span");
-        sliderLabel.id = "volume-booster-label";
-        sliderLabel.innerText = "🔊 100%";
-        sliderLabel.style.cssText = `
-            font-size: 14px;
-            font-weight: bold;
-            color: white;
-        `;
+        const label = document.createElement("span");
+        label.innerText = "🔊 100%";
+        label.style.cssText = `font-size: 14px; font-weight: bold; color: white;`;
 
         function createButton(id, text) {
-            let button = document.createElement("button");
-            button.id = id;
-            button.innerText = text;
-            button.style.cssText = `
+            const btn = document.createElement("button");
+            btn.id = id;
+            btn.innerText = text;
+            btn.style.cssText = `
                 padding: 5px 10px;
                 font-size: 12px;
                 background: transparent;
@@ -88,42 +90,29 @@
                 font-weight: bold;
                 transition: background 0.2s;
             `;
-
-            button.addEventListener("mouseenter", () => {
-                button.style.background = "rgba(255, 255, 255, 0.2)";
-            });
-
-            button.addEventListener("mouseleave", () => {
-                button.style.background = "transparent";
-            });
-
-            return button;
+            btn.addEventListener("mouseenter", () => btn.style.background = "rgba(255, 255, 255, 0.2)");
+            btn.addEventListener("mouseleave", () => btn.style.background = "transparent");
+            return btn;
         }
 
-        let toggleButton = createButton("toggle-boost-button", `🔄 Max: ${maxBoost * 100}%`);
-        toggleButton.addEventListener("click", function () {
+        const toggleBtn = createButton("toggle-boost-button", `🔄 Max: ${maxBoost * 100}%`);
+        toggleBtn.addEventListener("click", () => {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
-            toggleButton.innerText = `🔄 Max: ${maxBoost * 100}%`;
+            toggleBtn.innerText = `🔄 Max: ${maxBoost * 100}%`;
         });
 
-        let audioOnlyButton = createButton("audio-only-button", "🎵 Audio Only");
-        audioOnlyButton.addEventListener("click", function () {
+        const audioBtn = createButton("audio-only-button", "🎵 Audio Only");
+        audioBtn.addEventListener("click", () => {
             audioOnly = !audioOnly;
-
-            if (audioOnly) {
-                video.style.display = "none";
-                audioOnlyButton.innerText = "🎥 Show Video";
-            } else {
-                video.style.display = "block";
-                audioOnlyButton.innerText = "🎵 Audio Only";
-            }
+            video.style.display = audioOnly ? "none" : "block";
+            audioBtn.innerText = audioOnly ? "🎥 Show Video" : "🎵 Audio Only";
         });
 
-        if (!video.audioCtx) {
-            let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            let source = audioCtx.createMediaElementSource(video);
-            let gainNode = audioCtx.createGain();
+        if (!video.gainNode) {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaElementSource(video);
+            const gainNode = audioCtx.createGain();
             gainNode.gain.value = 1;
             source.connect(gainNode);
             gainNode.connect(audioCtx.destination);
@@ -131,41 +120,56 @@
             video.gainNode = gainNode;
         }
 
-        video.gainNode.gain.value = 1;
         slider.addEventListener("input", function () {
-            let boostFactor = parseFloat(this.value);
-            video.gainNode.gain.value = boostFactor;
-            sliderLabel.innerText = `🔊 ${Math.round(boostFactor * 100)}%`;
+            const val = parseFloat(this.value);
+            video.gainNode.gain.value = val;
+            label.innerText = `🔊 ${Math.round(val * 100)}%`;
         });
 
         container.appendChild(slider);
-        container.appendChild(sliderLabel);
-        container.appendChild(toggleButton);
-        container.appendChild(audioOnlyButton);
+        container.appendChild(label);
+        container.appendChild(toggleBtn);
+        container.appendChild(audioBtn);
         titleContainer.parentNode.insertBefore(container, titleContainer);
     }
 
     function setupEnhancer() {
         waitForElements(["video", "#above-the-fold, #title.ytd-watch-metadata"], (video, titleContainer) => {
             createControls(video, titleContainer);
+
+            // Watch for video element changes (e.g., YouTube replaces it)
+            new MutationObserver(() => {
+                if (!document.contains(video)) {
+                    console.log("YouTube Enhancer: Video replaced, reinitializing...");
+                    setupEnhancer();
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+
+            // Reinsert controls if DOM wipes them
+            new MutationObserver(() => {
+                if (!document.querySelector("#custom-controls-container")) {
+                    console.log("YouTube Enhancer: Controls removed, reinserting...");
+                    createControls(video, titleContainer);
+                }
+            }).observe(titleContainer.parentNode, { childList: true });
         });
     }
 
-    // Detect navigation in YouTube SPA
-    new MutationObserver(() => {
-        if (location.href !== lastUrl) {
-            lastUrl = location.href;
-            setTimeout(setupEnhancer, 1000);
-        }
-    }).observe(document.body, { childList: true, subtree: true });
+    // Watch for navigation between videos
+    const observeUrlChange = () => {
+        new MutationObserver(() => {
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                setTimeout(setupEnhancer, 1000);
+            }
+        }).observe(document.body, { childList: true, subtree: true });
+    };
 
-    // Also listen to YouTube navigation events
-    window.addEventListener("yt-navigate-finish", () => {
-        setTimeout(setupEnhancer, 1000);
-    });
-
+    window.addEventListener("yt-navigate-finish", () => setTimeout(setupEnhancer, 1000));
+    window.addEventListener("yt-page-data-updated", () => setTimeout(setupEnhancer, 1000));
     window.addEventListener("load", setupEnhancer);
     document.addEventListener("DOMContentLoaded", setupEnhancer);
 
     setupEnhancer();
+    observeUrlChange();
 })();
