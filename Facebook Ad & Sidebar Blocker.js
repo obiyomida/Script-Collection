@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Facebook Ad & PYMK Ultimate Blocker (v2.1)
+// @name         Facebook Ad & PYMK Ultimate Blocker (v2.2)
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  Blocks Sponsored Posts, Suggested Posts, PYMK, and Sidebar Ads on Facebook more reliably
+// @version      2.2
+// @description  Blocks Sponsored Posts, Suggested Posts, PYMK, and Sidebar Ads on Facebook more reliably and efficiently
 // @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -13,56 +13,83 @@
 (function () {
     'use strict';
 
-    // Utility: Check if element contains specific text (case-insensitive)
-    function containsText(el, text) {
-        return el.textContent && el.textContent.toLowerCase().includes(text.toLowerCase());
+    // List of keywords to block
+    const blockedTexts = [
+        'Sponsored',
+        'Suggested for you',
+        'People You May Know',
+        'Suggested Post',
+        'Promoted'
+    ];
+
+    // Utility: Check if element contains any blocked keyword (case-insensitive)
+    function containsBlockedText(el) {
+        return blockedTexts.some(text =>
+            el.textContent && el.textContent.toLowerCase().includes(text.toLowerCase())
+        );
     }
 
-    // Detect and remove unwanted sections
-    function removeUnwanted() {
-        const allDivs = document.querySelectorAll('div');
+    // Scan and remove unwanted content within a given root
+    function scanAndRemove(root) {
+        const divs = root.querySelectorAll ? root.querySelectorAll('div') : [];
+        if (root.tagName === 'DIV') {
+            // Include root if it's a <div>
+            scanDiv(root);
+        }
 
-        allDivs.forEach(div => {
-            try {
-                if (
-                    containsText(div, 'Sponsored') ||
-                    containsText(div, 'Suggested for you') ||
-                    containsText(div, 'People You May Know') ||
-                    containsText(div, 'Suggested Post') ||
-                    containsText(div, 'Promoted')
-                ) {
-                    // Optionally add a check for ad-like structure
-                    if (div.offsetHeight > 0 && div.offsetWidth > 0) {
-                        div.remove();
-                    }
+        divs.forEach(scanDiv);
+    }
+
+    function scanDiv(div) {
+        try {
+            if (containsBlockedText(div)) {
+                if (div.offsetHeight > 0 && div.offsetWidth > 0) {
+                    // Uncomment the line below to debug
+                    // console.log('Removed unwanted element:', div);
+                    div.remove();
                 }
-            } catch (e) {
-                // ignore errors
             }
-        });
+        } catch (e) {
+            // Ignore errors gracefully
+        }
     }
 
-    // Debounce utility to limit rapid calls
+    // Debounce utility to reduce frequency of mutation callbacks
     function debounce(fn, delay) {
         let timeout;
-        return () => {
+        return function () {
             clearTimeout(timeout);
             timeout = setTimeout(fn, delay);
         };
     }
 
-    // Initial run after DOM settles
-    setTimeout(() => {
-        removeUnwanted();
+    // Schedule scan using idle time if supported
+    function scheduleRemoveUnwanted() {
+        if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => scanAndRemove(document.body), { timeout: 300 });
+        } else {
+            setTimeout(() => scanAndRemove(document.body), 300);
+        }
+    }
 
-        const observer = new MutationObserver(debounce(() => {
-            removeUnwanted();
+    // Start observing after DOM loads
+    setTimeout(() => {
+        scheduleRemoveUnwanted();
+
+        const observer = new MutationObserver(debounce((mutations) => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === 1) {
+                        scanAndRemove(node);
+                    }
+                });
+            });
         }, 300));
 
         observer.observe(document.body, {
             childList: true,
             subtree: true
         });
-    }, 2000); // wait 2s to let FB load initial content
+    }, 2000);
 
 })();
