@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Facebook Ad & PYMK Smart Blocker (v2.4)
+// @name         Facebook Ad & PYMK Smart Remover (v2.5)
 // @namespace    http://tampermonkey.net/
-// @version      2.4
-// @description  Reliably hides Facebook sponsored and suggested content without breaking layout or letting ads come back in. Safe & persistent blocking with smarter targeting.
+// @version      2.5
+// @description  Reliably removes Facebook Sponsored/PYMK/Suggested content without breaking layout. Clean, safe, and customizable with smart post detection and performance tweaks.
 // @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -13,6 +13,7 @@
 (function () {
     'use strict';
 
+    // === Block Configuration ===
     const blockedTexts = [
         'Sponsored',
         'Suggested for you',
@@ -21,65 +22,80 @@
         'Promoted'
     ];
 
-    // Identify if element contains blocked text
+    const SCAN_DELAY = 300;
+    const INITIAL_DELAY = 2000;
+
+    // === Helpers ===
+
+    // Checks if the element or its text includes blocked phrases
     function containsBlockedText(el) {
         if (!el || !el.textContent) return false;
         const text = el.textContent.toLowerCase();
         return blockedTexts.some(b => text.includes(b.toLowerCase()));
     }
 
-    // Safely hide instead of removing (fallback)
-    function safelyHide(el) {
-        if (!el || el.dataset.blocked === 'true') return;
-        el.style.display = 'none';
-        el.dataset.blocked = 'true'; // Mark to avoid repeated work
-    }
+    // Determines if a node is a valid container for removal (post/suggestion block)
+    function getRemovableContainer(el) {
+        let node = el;
+        while (node && node !== document.body) {
+            const role = node.getAttribute('role');
+            const isPost = role === 'article' || node.dataset.pagelet?.includes('FeedUnit');
+            const isCard = node.classList?.contains('x1lliihq'); // FB card container class (subject to change)
 
-    // Get the likely post container to block
-    function getPostContainer(el) {
-        let current = el;
-        while (current && current !== document.body) {
-            const role = current.getAttribute('role');
-            if (role === 'article' || current.dataset.pagelet?.includes('FeedUnit')) {
-                return current;
+            if (isPost || isCard) {
+                const isSafe = node.offsetHeight < 1200 && node.offsetWidth < 1200;
+                if (isSafe) return node;
             }
-            current = current.parentElement;
+
+            // Prevent removing core containers
+            if (node.tagName === 'MAIN' || node.id?.startsWith('mount_')) break;
+
+            node = node.parentElement;
         }
         return null;
     }
 
-    function scanAndBlock(root) {
-        const spans = root.querySelectorAll ? root.querySelectorAll('span, div') : [];
-        spans.forEach(node => {
-            try {
-                if (containsBlockedText(node)) {
-                    const container = getPostContainer(node);
-                    if (container) safelyHide(container);
-                }
-            } catch (e) {
-                // Fail silently
-            }
-        });
+    // Scans and removes any matched element
+    function scanAndRemove(root) {
+        const nodes = root.querySelectorAll ? root.querySelectorAll('span, div') : [];
+        if (root.nodeType === 1) checkAndRemove(root); // also check root itself
+        nodes.forEach(checkAndRemove);
     }
 
-    const debounce = (fn, delay) => {
-        let timeout;
-        return function () {
-            clearTimeout(timeout);
-            timeout = setTimeout(fn, delay);
-        };
-    };
+    // Core removal logic
+    function checkAndRemove(node) {
+        try {
+            if (containsBlockedText(node)) {
+                const container = getRemovableContainer(node);
+                if (container && !container.dataset.cleaned) {
+                    container.remove();
+                }
+            }
+        } catch (e) {
+            // Silent fail
+        }
+    }
 
+    // Debounce for mutation observer
+    function debounce(fn, delay) {
+        let timer;
+        return function (...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
+    // Observe DOM changes and scan additions
     function observeDOM() {
         const observer = new MutationObserver(debounce((mutations) => {
             mutations.forEach(m => {
                 m.addedNodes.forEach(n => {
                     if (n.nodeType === 1) {
-                        scanAndBlock(n);
+                        scanAndRemove(n);
                     }
                 });
             });
-        }, 300));
+        }, SCAN_DELAY));
 
         observer.observe(document.body, {
             childList: true,
@@ -87,10 +103,9 @@
         });
     }
 
-    // Initial run after content is loaded
+    // Start up after initial FB content loads
     setTimeout(() => {
-        scanAndBlock(document.body);
+        scanAndRemove(document.body);
         observeDOM();
-    }, 2000);
-
+    }, INITIAL_DELAY);
 })();
