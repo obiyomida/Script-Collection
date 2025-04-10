@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Facebook Ad & PYMK Smart Cleaner (v2.5)
+// @name         Facebook Cleaner Pro - Aggressive Smart Mode (v4.1)
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  Fully removes Sponsored/PYMK/Suggested content from Facebook without breaking the homepage. Includes QOL improvements and efficient scanning.
+// @version      4.1
+// @description  Aggressively removes sponsored, suggested, and video junk on Facebook while keeping main page intact. Uses smart filters to avoid layout breakage. Safe + strong cleaning mode.
 // @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -13,89 +13,92 @@
 (function () {
     'use strict';
 
-    // === Config ===
-    const DEBUG = false; // Set to true to see logs in console
-    const blockedTexts = [
+    const BLOCK_LABELS = [
         'Sponsored',
         'Suggested for you',
         'People You May Know',
         'Suggested Post',
-        'Promoted'
+        'Promoted',
+        'Reels and short videos',
+        'Watch',
+        'Live',
+        'Live videos',
+        'Shorts',
+        'More videos'
     ];
 
-    // === Utilities ===
-    function log(...args) {
-        if (DEBUG) console.log('[FB Blocker]', ...args);
+    const PROTECTED_IDS = ['mount_', 'pagelet_dock', 'pagelet_bluebar']; // main app root or header bars
+    const PROTECTED_ROLES = ['main', 'navigation', 'banner'];
+
+    function containsBlockedText(node) {
+        if (!node || !node.textContent) return false;
+        const text = node.textContent.toLowerCase();
+        return BLOCK_LABELS.some(label => text.includes(label.toLowerCase()));
     }
 
-    function containsBlockedText(el) {
-        if (!el || !el.textContent) return false;
-        const text = el.textContent.toLowerCase();
-        return blockedTexts.some(keyword => text.includes(keyword.toLowerCase()));
+    function isProtected(node) {
+        if (!node) return true;
+        const tag = node.tagName?.toLowerCase();
+        const id = (node.id || '').toLowerCase();
+        const role = (node.getAttribute?.('role') || '').toLowerCase();
+
+        return (
+            tag === 'body' ||
+            tag === 'html' ||
+            PROTECTED_IDS.some(p => id.startsWith(p)) ||
+            PROTECTED_ROLES.includes(role)
+        );
     }
 
-    function isPostContainer(el) {
-        const role = el.getAttribute?.('role') || '';
-        const pagelet = el.dataset?.pagelet || '';
-        return role === 'article' || pagelet.includes('FeedUnit');
-    }
+    function findRemovableParent(node) {
+        let current = node;
+        for (let i = 0; i < 10; i++) {
+            if (!current || current === document.body || isProtected(current)) break;
 
-    function isSafeToRemove(el) {
-        const tag = el.tagName?.toLowerCase();
-        const id = el.id?.toLowerCase() || '';
-        const isBigContainer = el.offsetHeight > 1200 && el.offsetWidth > 1200;
-        const isRoot = id.startsWith('mount_') || tag === 'main' || tag === 'html' || tag === 'body';
-        return !isBigContainer && !isRoot;
-    }
+            const role = current.getAttribute?.('role') || '';
+            const data = current.dataset || {};
+            const pagelet = data.pagelet || '';
 
-    function findRemovableContainer(el) {
-        let current = el;
-        for (let i = 0; i < 10; i++) { // don't climb too far
-            if (!current || current === document.body) break;
-            if (isPostContainer(current) && isSafeToRemove(current)) {
-                return current;
-            }
+            const isPostLike =
+                role === 'article' ||
+                pagelet.includes('FeedUnit') ||
+                pagelet.includes('Reels') ||
+                pagelet.includes('Watch');
+
+            if (isPostLike && !isProtected(current)) return current;
+
             current = current.parentElement;
         }
         return null;
     }
 
-    function removeUnwantedContent(root) {
-        const spans = root.querySelectorAll ? root.querySelectorAll('span, div') : [];
-
-        spans.forEach(node => {
-            try {
-                if (containsBlockedText(node)) {
-                    const target = findRemovableContainer(node);
-                    if (target) {
-                        log('Removed blocked content:', target);
-                        target.remove();
-                    }
-                }
-            } catch (e) {
-                log('Error during scan:', e);
-            }
-        });
+    function removeBlockedContent(root) {
+        const nodes = root.querySelectorAll ? root.querySelectorAll('span, div, section') : [];
+        if (root.nodeType === 1) scanNode(root);
+        nodes.forEach(scanNode);
     }
 
-    const debounce = (fn, delay) => {
-        let timeout;
-        return function () {
-            clearTimeout(timeout);
-            timeout = setTimeout(fn, delay);
-        };
-    };
+    function scanNode(node) {
+        try {
+            if (containsBlockedText(node)) {
+                const target = findRemovableParent(node);
+                if (target && !isProtected(target)) {
+                    target.remove();
+                }
+            }
+        } catch (e) {
+            // Skip errors silently
+        }
+    }
 
     function observeDOM() {
-        const observer = new MutationObserver(debounce((mutations) => {
+        const observer = new MutationObserver(mutations => {
             mutations.forEach(m => {
                 m.addedNodes.forEach(n => {
-                    if (n.nodeType === 1) {
-                        removeUnwantedContent(n);
-                    }
+                    if (n.nodeType === 1) removeBlockedContent(n);
                 });
             });
-        }, 200));
+        });
 
         observer.observe(document.body, {
             childList: true,
@@ -103,15 +106,16 @@
         });
     }
 
-    function initialCleanup() {
-        removeUnwantedContent(document.body);
+    function autoSweep() {
+        setInterval(() => {
+            removeBlockedContent(document.body);
+        }, 1000); // runs every second
     }
 
-    // === Init ===
     setTimeout(() => {
-        initialCleanup();
+        removeBlockedContent(document.body);
         observeDOM();
-        log('Facebook Ad/PYMK Smart Cleaner initialized.');
-    }, 2000); // wait for initial render to stabilize
+        autoSweep();
+    }, 1500);
 
 })();
