@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Facebook Ad & PYMK Ultimate Blocker (v2.2)
+// @name         Facebook Ad & PYMK Smart Blocker (v2.4)
 // @namespace    http://tampermonkey.net/
-// @version      2.2
-// @description  Blocks Sponsored Posts, Suggested Posts, PYMK, and Sidebar Ads on Facebook more reliably and efficiently
-// @author       obiyomida
+// @version      2.4
+// @description  Reliably hides Facebook sponsored and suggested content without breaking layout or letting ads come back in. Safe & persistent blocking with smarter targeting.
+// @author       ImprovedByGPT
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
 // @grant        none
@@ -13,7 +13,6 @@
 (function () {
     'use strict';
 
-    // List of keywords to block
     const blockedTexts = [
         'Sponsored',
         'Suggested for you',
@@ -22,65 +21,61 @@
         'Promoted'
     ];
 
-    // Utility: Check if element contains any blocked keyword (case-insensitive)
+    // Identify if element contains blocked text
     function containsBlockedText(el) {
-        return blockedTexts.some(text =>
-            el.textContent && el.textContent.toLowerCase().includes(text.toLowerCase())
-        );
+        if (!el || !el.textContent) return false;
+        const text = el.textContent.toLowerCase();
+        return blockedTexts.some(b => text.includes(b.toLowerCase()));
     }
 
-    // Scan and remove unwanted content within a given root
-    function scanAndRemove(root) {
-        const divs = root.querySelectorAll ? root.querySelectorAll('div') : [];
-        if (root.tagName === 'DIV') {
-            // Include root if it's a <div>
-            scanDiv(root);
-        }
-
-        divs.forEach(scanDiv);
+    // Safely hide instead of removing (fallback)
+    function safelyHide(el) {
+        if (!el || el.dataset.blocked === 'true') return;
+        el.style.display = 'none';
+        el.dataset.blocked = 'true'; // Mark to avoid repeated work
     }
 
-    function scanDiv(div) {
-        try {
-            if (containsBlockedText(div)) {
-                if (div.offsetHeight > 0 && div.offsetWidth > 0) {
-                    // Uncomment the line below to debug
-                    // console.log('Removed unwanted element:', div);
-                    div.remove();
-                }
+    // Get the likely post container to block
+    function getPostContainer(el) {
+        let current = el;
+        while (current && current !== document.body) {
+            const role = current.getAttribute('role');
+            if (role === 'article' || current.dataset.pagelet?.includes('FeedUnit')) {
+                return current;
             }
-        } catch (e) {
-            // Ignore errors gracefully
+            current = current.parentElement;
         }
+        return null;
     }
 
-    // Debounce utility to reduce frequency of mutation callbacks
-    function debounce(fn, delay) {
+    function scanAndBlock(root) {
+        const spans = root.querySelectorAll ? root.querySelectorAll('span, div') : [];
+        spans.forEach(node => {
+            try {
+                if (containsBlockedText(node)) {
+                    const container = getPostContainer(node);
+                    if (container) safelyHide(container);
+                }
+            } catch (e) {
+                // Fail silently
+            }
+        });
+    }
+
+    const debounce = (fn, delay) => {
         let timeout;
         return function () {
             clearTimeout(timeout);
             timeout = setTimeout(fn, delay);
         };
-    }
+    };
 
-    // Schedule scan using idle time if supported
-    function scheduleRemoveUnwanted() {
-        if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => scanAndRemove(document.body), { timeout: 300 });
-        } else {
-            setTimeout(() => scanAndRemove(document.body), 300);
-        }
-    }
-
-    // Start observing after DOM loads
-    setTimeout(() => {
-        scheduleRemoveUnwanted();
-
+    function observeDOM() {
         const observer = new MutationObserver(debounce((mutations) => {
-            mutations.forEach(mutation => {
-                mutation.addedNodes.forEach(node => {
-                    if (node.nodeType === 1) {
-                        scanAndRemove(node);
+            mutations.forEach(m => {
+                m.addedNodes.forEach(n => {
+                    if (n.nodeType === 1) {
+                        scanAndBlock(n);
                     }
                 });
             });
@@ -90,6 +85,12 @@
             childList: true,
             subtree: true
         });
+    }
+
+    // Initial run after content is loaded
+    setTimeout(() => {
+        scanAndBlock(document.body);
+        observeDOM();
     }, 2000);
 
 })();
