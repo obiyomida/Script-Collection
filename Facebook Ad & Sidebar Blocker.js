@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      2.4
 // @description  Reliably hides Facebook sponsored and suggested content without breaking layout or letting ads come back in. Safe & persistent blocking with smarter targeting.
-// @author       ImprovedByGPT
+// @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
 // @grant        none
