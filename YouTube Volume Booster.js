@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         YouTube Volume Booster + Audio Only Mode (Ultra Stable)
 // @namespace    http://tampermonkey.net/
-// @version      3.0
-// @description  Boost YouTube volume up to 500% (toggleable to 1000%). Audio Only mode. Fully robust against refresh/navigation/lazy loads/reset DOMs on YouTube SPA site changes.
+// @version      3.1
+// @description  Boost YouTube volume up to 500%/1000%. Toggleable Audio Only mode. Works across YouTube SPA navigation.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
+// @match        *://www.youtube.com/*
 // @grant        none
 // ==/UserScript==
 
@@ -15,171 +16,135 @@
     let maxBoost = 5;
     let audioOnly = false;
 
-    function waitForElements(selectors, callback, timeout = 15000) {
+    const waitForElements = (selectors, callback, timeout = 15000) => {
         const start = performance.now();
 
-        function check() {
+        const check = () => {
             const elements = selectors.map(sel => document.querySelector(sel));
-            if (elements.every(el => el)) {
-                callback(...elements);
-                return;
-            }
-
-            if (performance.now() - start > timeout) {
-                console.warn("YouTube Enhancer: Timeout reached, retrying later...");
-                setTimeout(() => waitForElements(selectors, callback, timeout), 2000); // Fallback retry
-                return;
-            }
-
+            if (elements.every(Boolean)) return callback(...elements);
+            if (performance.now() - start > timeout) return setTimeout(() => waitForElements(selectors, callback, timeout), 2000);
             requestIdleCallback(check, { timeout: 1000 });
-        }
+        };
 
         check();
-    }
+    };
 
-    function createControls(video, titleContainer) {
+    const createButton = (id, text, onClick) => {
+        const btn = document.createElement("button");
+        Object.assign(btn, { id, innerText: text });
+        Object.assign(btn.style, {
+            padding: "5px 10px",
+            fontSize: "12px",
+            background: "transparent",
+            color: "white",
+            border: "1px solid white",
+            borderRadius: "5px",
+            cursor: "pointer",
+            fontWeight: "bold",
+            transition: "background 0.2s"
+        });
+        btn.onmouseenter = () => btn.style.background = "rgba(255,255,255,0.2)";
+        btn.onmouseleave = () => btn.style.background = "transparent";
+        btn.onclick = onClick;
+        return btn;
+    };
+
+    const createControls = (video, titleContainer) => {
         if (!video || !titleContainer || document.querySelector("#custom-controls-container")) return;
 
         const container = document.createElement("div");
         container.id = "custom-controls-container";
-        container.style.cssText = `
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-            padding: 10px;
-            margin-top: 10px;
-            background: rgba(0, 0, 0, 0.6);
-            border-radius: 10px;
-        `;
+        Object.assign(container.style, {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "15px",
+            padding: "10px",
+            marginTop: "10px",
+            background: "rgba(0,0,0,0.6)",
+            borderRadius: "10px"
+        });
 
-        const slider = document.createElement("input");
-        slider.type = "range";
-        slider.min = "1";
-        slider.max = maxBoost.toString();
-        slider.step = "0.1";
-        slider.value = "1";
-        slider.style.cssText = `
-            width: 150px;
-            height: 8px;
-            cursor: pointer;
-            background: white;
-        `;
+        const slider = Object.assign(document.createElement("input"), {
+            type: "range",
+            min: "1",
+            max: maxBoost.toString(),
+            step: "0.1",
+            value: "1"
+        });
+        slider.style.cssText = "width: 150px; height: 8px; cursor: pointer; background: white;";
 
         const label = document.createElement("span");
         label.innerText = "🔊 100%";
-        label.style.cssText = `font-size: 14px; font-weight: bold; color: white;`;
+        label.style.cssText = "font-size: 14px; font-weight: bold; color: white;";
 
-        function createButton(id, text) {
-            const btn = document.createElement("button");
-            btn.id = id;
-            btn.innerText = text;
-            btn.style.cssText = `
-                padding: 5px 10px;
-                font-size: 12px;
-                background: transparent;
-                color: white;
-                border: 1px solid white;
-                border-radius: 5px;
-                cursor: pointer;
-                font-weight: bold;
-                transition: background 0.2s;
-            `;
-            btn.addEventListener("mouseenter", () => btn.style.background = "rgba(255, 255, 255, 0.2)");
-            btn.addEventListener("mouseleave", () => btn.style.background = "transparent");
-            return btn;
-        }
-
-        const toggleBtn = createButton("toggle-boost-button", `🔄 Max: ${maxBoost * 100}%`);
-        toggleBtn.addEventListener("click", () => {
+        const toggleBtn = createButton("toggle-boost", `🔄 Max: ${maxBoost * 100}%`, () => {
             maxBoost = maxBoost === 5 ? 10 : 5;
             slider.max = maxBoost.toString();
             toggleBtn.innerText = `🔄 Max: ${maxBoost * 100}%`;
         });
 
-        const audioBtn = createButton("audio-only-button", "🎵 Audio Only");
-        audioBtn.addEventListener("click", () => {
+        const audioBtn = createButton("audio-only", "🎵 Audio Only", () => {
             audioOnly = !audioOnly;
             video.style.display = audioOnly ? "none" : "block";
             audioBtn.innerText = audioOnly ? "🎥 Show Video" : "🎵 Audio Only";
         });
 
         if (!video.gainNode) {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const source = audioCtx.createMediaElementSource(video);
-            const gainNode = audioCtx.createGain();
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = ctx.createMediaElementSource(video);
+            const gainNode = ctx.createGain();
             gainNode.gain.value = 1;
+            source.connect(gainNode).connect(ctx.destination);
 
-            source.connect(gainNode);
-            gainNode.connect(audioCtx.destination);
+            setInterval(() => ctx.state === "suspended" && ctx.resume(), 5000);
 
-            // Prevent auto-suspend
-            setInterval(() => {
-                if (audioCtx.state === "suspended") {
-                    audioCtx.resume();
-                }
-            }, 5000);
-
-            video.audioCtx = audioCtx;
+            video.audioCtx = ctx;
             video.gainNode = gainNode;
         }
 
-        slider.addEventListener("input", function () {
-            const val = parseFloat(this.value);
+        slider.oninput = () => {
+            const val = parseFloat(slider.value);
             video.gainNode.gain.value = val;
             label.innerText = `🔊 ${Math.round(val * 100)}%`;
-        });
+        };
 
-        container.appendChild(slider);
-        container.appendChild(label);
-        container.appendChild(toggleBtn);
-        container.appendChild(audioBtn);
-
+        [slider, label, toggleBtn, audioBtn].forEach(el => container.appendChild(el));
         titleContainer.parentNode.insertBefore(container, titleContainer);
-    }
+    };
 
-    function setupEnhancer() {
+    const setupEnhancer = () => {
         waitForElements(["video", "#above-the-fold, #title.ytd-watch-metadata"], (video, titleContainer) => {
             createControls(video, titleContainer);
 
-            // Monitor video replacement
-            const videoObserver = new MutationObserver(() => {
+            new MutationObserver(() => {
                 if (!document.contains(video)) {
                     console.log("YouTube Enhancer: Video replaced, reinitializing...");
-                    videoObserver.disconnect();
                     setupEnhancer();
                 }
-            });
+            }).observe(document.body, { childList: true, subtree: true });
 
-            videoObserver.observe(document.body, { childList: true, subtree: true });
-
-            // Monitor control removal
-            const uiObserver = new MutationObserver(() => {
+            new MutationObserver(() => {
                 if (!document.querySelector("#custom-controls-container")) {
                     console.log("YouTube Enhancer: Controls removed, reinserting...");
                     createControls(video, titleContainer);
                 }
-            });
-
-            uiObserver.observe(titleContainer.parentNode, { childList: true });
+            }).observe(titleContainer.parentNode, { childList: true });
         });
-    }
+    };
 
-    function observeUrlChange() {
-        const observer = new MutationObserver(() => {
+    const observeUrlChange = () => {
+        new MutationObserver(() => {
             if (location.href !== lastUrl) {
                 lastUrl = location.href;
                 setTimeout(setupEnhancer, 1000);
             }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
+        }).observe(document.body, { childList: true, subtree: true });
+    };
 
-    // YouTube SPA event hooks
-    window.addEventListener("yt-navigate-finish", () => setTimeout(setupEnhancer, 1000));
-    window.addEventListener("yt-page-data-updated", () => setTimeout(setupEnhancer, 1000));
-    window.addEventListener("load", setupEnhancer);
-    document.addEventListener("DOMContentLoaded", setupEnhancer);
+    ["yt-navigate-finish", "yt-page-data-updated", "load", "DOMContentLoaded"].forEach(evt =>
+        window.addEventListener(evt, () => setTimeout(setupEnhancer, 1000))
+    );
 
     setupEnhancer();
     observeUrlChange();
