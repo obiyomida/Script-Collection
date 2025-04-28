@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      5.0
 // @description  Facebook Sponsor Block
-// @author       ImprovedByGPT
+// @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
 // @grant        none
