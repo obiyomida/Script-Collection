@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Facebook Cleaner Pro - Aggressive Smart Mode (v4.1)
+// @name         Clean Facebook
 // @namespace    http://tampermonkey.net/
-// @version      4.1
-// @description  Aggressively removes sponsored, suggested, and video junk on Facebook while keeping main page intact. Uses smart filters to avoid layout breakage. Safe + strong cleaning mode.
-// @author       obiyomida
+// @version      5.0
+// @description  Facebook Sponsor Block
+// @author       ImprovedByGPT
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
 // @grant        none
@@ -27,12 +27,24 @@
         'More videos'
     ];
 
-    const PROTECTED_IDS = ['mount_', 'pagelet_dock', 'pagelet_bluebar']; // main app root or header bars
+    const PROTECTED_IDS = ['mount_', 'pagelet_dock', 'pagelet_bluebar'];
     const PROTECTED_ROLES = ['main', 'navigation', 'banner'];
 
+    function reconstructText(node) {
+        let text = '';
+        function walker(n) {
+            if (n.nodeType === Node.TEXT_NODE) {
+                text += n.textContent.trim();
+            }
+            n.childNodes.forEach(walker);
+        }
+        walker(node);
+        return text.toLowerCase();
+    }
+
     function containsBlockedText(node) {
-        if (!node || !node.textContent) return false;
-        const text = node.textContent.toLowerCase();
+        if (!node) return false;
+        const text = reconstructText(node);
         return BLOCK_LABELS.some(label => text.includes(label.toLowerCase()));
     }
 
@@ -52,7 +64,7 @@
 
     function findRemovableParent(node) {
         let current = node;
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; i < 12; i++) {
             if (!current || current === document.body || isProtected(current)) break;
 
             const role = current.getAttribute?.('role') || '';
@@ -63,7 +75,10 @@
                 role === 'article' ||
                 pagelet.includes('FeedUnit') ||
                 pagelet.includes('Reels') ||
-                pagelet.includes('Watch');
+                pagelet.includes('Watch') ||
+                current.className?.toLowerCase().includes('story') ||
+                current.className?.toLowerCase().includes('feed') ||
+                current.className?.toLowerCase().includes('reel');
 
             if (isPostLike && !isProtected(current)) return current;
 
@@ -87,7 +102,7 @@
                 }
             }
         } catch (e) {
-            // Skip errors silently
+            // Ignore errors
         }
     }
 
@@ -109,7 +124,7 @@
     function autoSweep() {
         setInterval(() => {
             removeBlockedContent(document.body);
-        }, 1000); // runs every second
+        }, 1200); // every 1.2 seconds
     }
 
     setTimeout(() => {
