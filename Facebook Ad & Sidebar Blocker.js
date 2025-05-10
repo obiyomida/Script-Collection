@@ -1,8 +1,7 @@
 // ==UserScript==
-// @name         Clean Facebook
+// @name         Block Sponsored Ads
 // @namespace    http://tampermonkey.net/
-// @version      5.0
-// @description  Facebook Sponsor Block
+// @version      5.2
 // @author       obiyomida
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -32,13 +31,10 @@
 
     function reconstructText(node) {
         let text = '';
-        function walker(n) {
-            if (n.nodeType === Node.TEXT_NODE) {
-                text += n.textContent.trim();
-            }
-            n.childNodes.forEach(walker);
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null, false);
+        while (walker.nextNode()) {
+            text += walker.currentNode.textContent.trim() + ' ';
         }
-        walker(node);
         return text.toLowerCase();
     }
 
@@ -46,6 +42,18 @@
         if (!node) return false;
         const text = reconstructText(node);
         return BLOCK_LABELS.some(label => text.includes(label.toLowerCase()));
+    }
+
+    function containsBlockedAria(node) {
+        const aria = node.getAttribute?.('aria-label') || '';
+        return BLOCK_LABELS.some(label => aria.toLowerCase().includes(label.toLowerCase()));
+    }
+
+    function containsBlockedTitleOrData(node) {
+        const title = node.getAttribute?.('title') || '';
+        const datasetValues = Object.values(node.dataset || {}).join(' ');
+        const combined = (title + ' ' + datasetValues).toLowerCase();
+        return BLOCK_LABELS.some(label => combined.includes(label.toLowerCase()));
     }
 
     function isProtected(node) {
@@ -64,46 +72,50 @@
 
     function findRemovableParent(node) {
         let current = node;
-        for (let i = 0; i < 12; i++) {
+        for (let i = 0; i < 14; i++) {
             if (!current || current === document.body || isProtected(current)) break;
 
             const role = current.getAttribute?.('role') || '';
             const data = current.dataset || {};
             const pagelet = data.pagelet || '';
+            const classList = current.className?.toLowerCase();
 
-            const isPostLike =
+            const isLikelyPost =
                 role === 'article' ||
                 pagelet.includes('FeedUnit') ||
-                pagelet.includes('Reels') ||
-                pagelet.includes('Watch') ||
-                current.className?.toLowerCase().includes('story') ||
-                current.className?.toLowerCase().includes('feed') ||
-                current.className?.toLowerCase().includes('reel');
+                classList?.includes('feed') ||
+                classList?.includes('story') ||
+                classList?.includes('reel') ||
+                classList?.includes('video');
 
-            if (isPostLike && !isProtected(current)) return current;
+            if (isLikelyPost && !isProtected(current)) return current;
 
             current = current.parentElement;
         }
         return null;
     }
 
-    function removeBlockedContent(root) {
-        const nodes = root.querySelectorAll ? root.querySelectorAll('span, div, section') : [];
-        if (root.nodeType === 1) scanNode(root);
-        nodes.forEach(scanNode);
-    }
-
     function scanNode(node) {
         try {
-            if (containsBlockedText(node)) {
+            if (
+                containsBlockedText(node) ||
+                containsBlockedAria(node) ||
+                containsBlockedTitleOrData(node)
+            ) {
                 const target = findRemovableParent(node);
                 if (target && !isProtected(target)) {
                     target.remove();
                 }
             }
         } catch (e) {
-            // Ignore errors
+            // Silent fail
         }
+    }
+
+    function removeBlockedContent(root) {
+        const nodes = root.querySelectorAll?.('[aria-label], [title], span, div, section') || [];
+        if (root.nodeType === 1) scanNode(root);
+        nodes.forEach(scanNode);
     }
 
     function observeDOM() {
@@ -124,13 +136,13 @@
     function autoSweep() {
         setInterval(() => {
             removeBlockedContent(document.body);
-        }, 1200); // every 1.2 seconds
+        }, 1500);
     }
 
     setTimeout(() => {
         removeBlockedContent(document.body);
         observeDOM();
         autoSweep();
-    }, 1500);
+    }, 2000);
 
 })();
