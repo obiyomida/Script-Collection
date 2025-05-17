@@ -1,11 +1,10 @@
 // ==UserScript==
-// @name         YouTube Volume Booster + Audio Only Mode (Ultra Stable)
+// @name         YouTube Volume Booster + Audio Only Mode (Optimized)
 // @namespace    http://tampermonkey.net/
-// @version      3.1
-// @description  Boost YouTube volume up to 500%/1000%. Toggleable Audio Only mode. Works across YouTube SPA navigation.
+// @version      3.2
+// @description  Boost YouTube volume up to 500%/1000%.
 // @author       obiyomida
 // @match        *://www.youtube.com/watch*
-// @match        *://www.youtube.com/*
 // @grant        none
 // ==/UserScript==
 
@@ -15,6 +14,7 @@
     let lastUrl = location.href;
     let maxBoost = 5;
     let audioOnly = false;
+    let isEnhancing = false;
 
     const waitForElements = (selectors, callback, timeout = 15000) => {
         const start = performance.now();
@@ -22,8 +22,8 @@
         const check = () => {
             const elements = selectors.map(sel => document.querySelector(sel));
             if (elements.every(Boolean)) return callback(...elements);
-            if (performance.now() - start > timeout) return setTimeout(() => waitForElements(selectors, callback, timeout), 2000);
-            requestIdleCallback(check, { timeout: 1000 });
+            if (performance.now() - start > timeout) return;
+            setTimeout(check, 300);
         };
 
         check();
@@ -97,7 +97,11 @@
             gainNode.gain.value = 1;
             source.connect(gainNode).connect(ctx.destination);
 
-            setInterval(() => ctx.state === "suspended" && ctx.resume(), 5000);
+            document.addEventListener("visibilitychange", () => {
+                if (document.visibilityState === "visible" && ctx.state === "suspended") {
+                    ctx.resume();
+                }
+            });
 
             video.audioCtx = ctx;
             video.gainNode = gainNode;
@@ -114,38 +118,46 @@
     };
 
     const setupEnhancer = () => {
+        if (isEnhancing) return;
+        isEnhancing = true;
+        setTimeout(() => isEnhancing = false, 3000);
+
         waitForElements(["video", "#above-the-fold, #title.ytd-watch-metadata"], (video, titleContainer) => {
             createControls(video, titleContainer);
 
-            new MutationObserver(() => {
+            const videoObserver = new MutationObserver(() => {
                 if (!document.contains(video)) {
-                    console.log("YouTube Enhancer: Video replaced, reinitializing...");
+                    videoObserver.disconnect();
                     setupEnhancer();
                 }
-            }).observe(document.body, { childList: true, subtree: true });
+            });
+            videoObserver.observe(document.body, { childList: true, subtree: true });
 
-            new MutationObserver(() => {
+            const controlObserver = new MutationObserver(() => {
                 if (!document.querySelector("#custom-controls-container")) {
-                    console.log("YouTube Enhancer: Controls removed, reinserting...");
+                    controlObserver.disconnect();
                     createControls(video, titleContainer);
                 }
-            }).observe(titleContainer.parentNode, { childList: true });
+            });
+            controlObserver.observe(titleContainer.parentNode, { childList: true });
         });
     };
 
     const observeUrlChange = () => {
-        new MutationObserver(() => {
+        let debounceTimer;
+        const observer = new MutationObserver(() => {
             if (location.href !== lastUrl) {
-                lastUrl = location.href;
-                setTimeout(setupEnhancer, 1000);
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    lastUrl = location.href;
+                    setupEnhancer();
+                }, 500);
             }
-        }).observe(document.body, { childList: true, subtree: true });
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
     };
 
-    ["yt-navigate-finish", "yt-page-data-updated", "load", "DOMContentLoaded"].forEach(evt =>
-        window.addEventListener(evt, () => setTimeout(setupEnhancer, 1000))
-    );
-
+    window.addEventListener("yt-navigate-finish", () => setTimeout(setupEnhancer, 1000));
     setupEnhancer();
     observeUrlChange();
 })();
